@@ -1,0 +1,497 @@
+创建数据库：
+    
+建表：
+create table student(id string,name string,birthday string,sex string) row format delimited fields terminated by '\t';
+create table course(id string,name string,tid string) row format delimited fields terminated by '\t';
+create table teacher(id string,name string) row format delimited fields terminated by '\t';
+create table score(sid string,cid string,score int) row format delimited fields terminated by '\t';
+数据：
+vi /home/bigdata/data/spark/sql/student.csv
+
+01 赵雷 1990-01-01 男
+02 钱电 1990-12-21 男
+03 孙风 1990-05-20 男
+04 李云 1990-08-06 男
+05 周梅 1991-12-01 女
+06 吴兰 1992-03-01 女
+07 郑竹 1989-07-01 女
+08 王菊 1990-01-20 女
+
+vi /home/bigdata/data/spark/sql/course.csv
+
+01	语文	02
+02	数学	01
+03	英语	03
+
+vi /home/bigdata/data/spark/sql/teacher.csv
+
+01	张三
+02	李四
+03	王五
+
+vi /home/bigdata/data/spark/sql/score.csv
+
+01	01	80
+01	02	90
+01	03	99
+02	01	70
+02	02	60
+02	03	80
+03	01	80
+03	02	80
+03	03	80
+04	01	50
+04	02	30
+04	03	20
+05	01	76
+05	02	87
+06	01	31
+06	03	34
+07	02	89
+07	03	98
+
+导入Hive表
+load data local inpath '/home/bigdata/data/spark/sql/student.csv' into table student;
+
+load data local inpath '/home/bigdata/data/spark/sql/course.csv' into table course;
+
+load data local inpath '/home/bigdata/data/spark/sql/teacher.csv' into table teacher;
+
+load data local inpath '/home/bigdata/data/spark/sql/score.csv' into table score;
+练习题：
+    1、查询"01"课程比"02"课程成绩高的学生的信息及课程分数:
+        select
+            t1.sid,
+            t2.name,
+            t2.birthday,
+            t2.sex, 
+            t1.cid01,
+            t1.score01,
+            t1.cid02,
+            t1.score02
+        from (
+            select
+                s1.sid,
+                s1.cid cid01,
+                s1.score score01,
+                s2.cid cid02,
+                s2.score score02
+            from score s1, score s2 where s1.sid = s2.sid 
+            and s1.cid = '01'
+            and s2.cid = '02'
+            and s1.score > s2.score 
+        ) t1 left join student t2 on t1.sid = t2.id
+    2、查询"01"课程比"02"课程成绩低的学生的信息及课程分数:
+        select
+            t1.sid,
+            t2.name,
+            t2.birthday,
+            t2.sex, 
+            t1.cid01,
+            t1.score01,
+            t1.cid02,
+            t1.score02
+        from (
+            select
+                s1.sid,
+                s1.cid cid01,
+                s1.score score01,
+                s2.cid cid02,
+                s2.score score02
+            from score s1, score s2 where s1.sid = s2.sid 
+            and s1.cid = '01'
+            and s2.cid = '02'
+            and s1.score < s2.score 
+        ) t1 left join student t2 on t1.sid = t2.id
+    3、查询平均成绩大于等于60分的同学的学生编号和学生姓名和平均成绩:
+        select
+            t1.sid,
+            t2.name,
+            round(t1.avg_score, 1)
+        from (
+            select
+                s.sid,
+                avg(s.score) avg_score
+            from score s
+            group by s.sid
+        ) t1 
+        left join student t2 on t1.sid = t2.id
+        where t1.avg_score >= 60;
+    4、查询平均成绩小于60分的同学的学生编号和学生姓名和平均成绩:
+        select
+            t1.sid,
+            t2.name,
+            round(t1.avg_score, 1)
+        from (
+            select
+                s.sid,
+                avg(s.score) avg_score
+            from score s
+            group by s.sid
+        ) t1 
+        left join student t2 on t1.sid = t2.id
+        where t1.avg_score <= 60;    
+    5、查询所有同学的学生编号、学生姓名、选课总数、所有课程的总成绩:
+        select
+            t2.id,
+            t2.name,
+            if(t1.countz is null, 0, t1.countz),
+            if(t1.total_score is null, 0, t1.total_score)
+        from (
+            select
+                s.sid,
+                count(1) countz,
+                sum(s.score) total_score
+            from score s
+            group by s.sid
+        ) t1 
+        right join student t2 on t1.sid = t2.id;
+    6、查询"李"姓老师的数量:
+        select count(1) from teacher where name like '李%';
+    7、查询学过"张三"老师授课的同学的信息:
+        select
+            t3.sid,
+            t4.name,
+            t3.courseid,
+            t3.score
+        from (
+            select
+                t2.sid,
+                t1.id courseid,
+                t2.score
+            from (
+                select
+                    c.id
+                from course c 
+                join teacher t on c.tid = t.id 
+                where t.name = "张三"
+            ) t1 
+            left join score t2 on t1.id = t2.cid
+        ) t3 
+        left join student t4 on t3.sid = t4.id
+        
+        select①
+            xxx⑤
+        from② where③ group by④ 
+    8、查询没学过"张三"老师授课的同学的信息:
+        select
+            distinct t6.sid
+        from score t6 
+        where t6.sid not in(
+            select
+                t3.sid
+            from (
+                select
+                    t2.sid,
+                    t1.id courseid,
+                    t2.score
+                from (
+                    select
+                        c.id
+                    from course c 
+                    join teacher t on c.tid = t.id 
+                    where t.name = "张三"
+                ) t1 
+                left join score t2 on t1.id = t2.cid
+            ) t3 
+            left join student t4 on t3.sid = t4.id
+        );              
+    9、查询学过编号为"01"并且也学过编号为"02"的课程的同学的信息:
+        略
+    10、查询学过编号为"01"但是没有学过编号为"02"的课程的同学的信息:
+        略
+    11、查询没有学全所有课程的同学的信息:
+        select
+            t2.sid,
+            t2.total_course      
+        from (
+           select
+            count(1) total_course
+           from course
+        ) t1 
+        left join (
+          select 
+             s1.sid,
+             count(1) total_course
+          from score s1
+          group by s1.sid
+        ) t2 on t1.total_course = t2.total_course
+    12、查询至少有一门课与学号为"01"的同学所学相同的同学的信息:
+        select
+            distinct t2.sid
+        from (
+            select
+                s1.sid, 
+                s1.cid
+            from score s1 where s1.sid = '01'
+        ) t1 
+        left join score t2 on t1.cid = t2.cid 
+        where t2.sid <> t1.sid
+    13、查询和"01"号的同学学习的课程完全相同的其他同学的信息:
+        select
+            t2.sid,
+            t2.cids
+        from (
+            select
+                s1.sid,
+                concat_ws(",", collect_list(s1.cid)) cids
+            from (select ss.sid, ss.cid from score ss order by ss.sid, ss.cid) s1
+            where s1.sid = '01'
+            group by s1.sid
+        ) t1,
+        (
+            select
+                s2.sid,
+                concat_ws(",", collect_list(s2.cid)) cids
+            from (select ss.sid, ss.cid from score ss order by ss.sid, ss.cid) s2
+            where s2.sid <> '01'
+            group by s2.sid
+        ) t2
+        where t1.cids = t2.cids;
+    14、查询没学过"张三"老师讲授的任一门课程的学生姓名:
+        参见第8题
+    15、查询两门及其以上不及格课程的同学的学号，姓名及其平均成绩:
+        select
+            t1.sid, 
+            t1.countz,
+            round(t2.avg_score, 2)
+        from (
+            select 
+                s1.sid, 
+                count(1) countz 
+            from score s1 
+            where s1.score < 60 
+            group by s1.sid
+        ) t1
+        left join (
+            select 
+                s2.sid, 
+                avg(s2.score) avg_score 
+            from score s2 
+            group by s2.sid
+        ) t2 on t1.sid = t2.sid
+        where t1.countz >= 2
+    16、检索"01"课程分数小于60，按分数降序排列的学生信息:
+        select sid, score from score where cid='01' order by score desc;
+    17、按平均成绩从高到低显示所有学生的所有课程的平均成绩:
+        select sid, avg(score) avg_score from score group by sid order by avg_score desc;
+    18、查询各科成绩最高分、最低分和平均分：以如下形式显示：课程ID，课程name，最高分，最低分，平均分，及格率，中等率，优良率，优秀率:
+–及格为>=60，中等为：70-80，优良为：80-90，优秀为：>=90
+        select
+            cid,    -- 课程id
+            max(score), -- 最高分
+            min(score), -- 最低分
+            round(avg(score), 2) avg_score, -- 平均分
+            count(1) countz --选课人数
+        from score 
+        group by cid 
+        --- 及格率，优秀率
+        select
+            cid,    
+            max(score), 
+            min(score), 
+            round(avg(score), 2) avg_score, 
+            round(sum(if(score >= 60, 1, 0))/count(1), 2) count_jgl,
+            round(sum(if(score >= 70 and score < 80, 1, 0))/count(1), 2) count_zdl,
+            round(sum(if(score >= 80 and score < 90, 1, 0))/count(1), 2) count_yll,
+            round(sum(if(score >= 90, 1, 0))/count(1), 2) count_yxl
+        from score 
+        group by cid         
+    19、按各科成绩进行排序，并显示排名:
+        略
+    20、查询学生的总成绩并进行排名:
+        略
+    21、查询不同老师所教不同课程平均分从高到低显示:
+        略
+    22、查询所有课程的成绩第2名到第3名的学生信息及该课程成绩:
+        略
+    23、统计各科成绩各分数段人数：课程编号,课程名称,[100-85],[85-70],[70-60],[0-60]及所占百分比
+        参见第18题
+    24、查询学生平均成绩及其名次:
+        略
+    25、查询各科成绩前三名的记录
+        分组Top3
+        select
+            tmp.* 
+        from (
+            select 
+                sid,
+                cid,
+                score,
+                row_number() over(partition by cid order by score desc) rank
+            from score 
+        ) tmp 
+        where tmp.rank < 4
+    26、查询每门课程被选修的学生数:
+        略
+    27、查询出只有两门课程的全部学生的学号和姓名:
+        略
+    28、查询男生、女生人数:
+        略
+    29、查询名字中含有"风"字的学生信息:
+        略
+    30、查询同名同性学生名单，并统计同名人数:
+        略
+    31、查询1990年出生的学生名单:
+        select * from student where year(birthday) = '1990';
+    32、查询每门课程的平均成绩，结果按平均成绩降序排列，平均成绩相同时，按课程编号升序排列:
+        select
+            cid,
+            round(avg(score), 2) avg_score
+        from score
+        group by cid 
+        order by avg_score desc, cid;
+    33、查询平均成绩大于等于85的所有学生的学号、姓名和平均成绩:
+        略
+    34、查询课程名称为"数学"，且分数低于60的学生姓名和分数:
+        略
+    35、查询所有学生的课程及分数情况:
+        score和student关联
+    36、查询任何一门课程成绩在70分以上的学生姓名、课程名称和分数:
+        略
+    37、查询课程不及格的学生:
+        略
+    38、查询课程编号为01且课程成绩在80分以上的学生的学号和姓名:
+        select
+            sid,
+            cid,
+            score
+        from score 
+        where cid = '01' and score > 70;
+    39、求每门课程的学生人数:
+        参见第26题
+    40、查询选修"张三"老师所授课程的学生中，成绩最高的学生信息及其成绩:
+        --step 1、找到成绩最高的学生
+        select 
+            t5.courseid,
+            max(t5.score)
+        from (
+            select
+                t3.sid,
+                t4.name,
+                t3.courseid,
+                t3.score
+            from (
+                select
+                    t2.sid,
+                    t1.id courseid,
+                    t2.score
+                from (
+                    select
+                        c.id
+                    from course c 
+                    join teacher t on c.tid = t.id 
+                    where t.name = "张三"
+                ) t1 
+                left join score t2 on t1.id = t2.cid
+            ) t3 
+            left join student t4 on t3.sid = t4.id
+        ) t5 
+        group by t5;
+        -- step2、拿着这个最高分，到score表中去关联学生信息
+        select
+            t7.sid,
+            t8.name,
+            t6.score
+        from (
+            select 
+                t5.courseid,
+                max(t5.score) score
+            from (
+                select
+                    t3.sid,
+                    t4.name,
+                    t3.courseid,
+                    t3.score
+                from (
+                    select
+                        t2.sid,
+                        t1.id courseid,
+                        t2.score
+                    from (
+                        select
+                            c.id
+                        from course c 
+                        join teacher t on c.tid = t.id 
+                        where t.name = "张三"
+                    ) t1 
+                    left join score t2 on t1.id = t2.cid
+                ) t3 
+                left join student t4 on t3.sid = t4.id
+            ) t5 
+            group by t5.courseid
+        ) t6
+        left join score t7 on t6.score = t7.score 
+        left join student t8 on t7.sid = t8.id
+    41、查询不同课程成绩相同的学生的学生编号、课程编号、学生成绩:
+        ---------->相同成绩的结果
+        select
+            s1.sid,
+            s1.cid,
+            s1.score,
+            s2.cid,
+            s2.score
+        from score s1
+        join score s2 on s1.sid = s2.sid
+        where s1.cid <> s2.cid 
+        and s1.score = s2.score
+        --------->结果去重
+        select
+            s1.sid,
+            s1.cid,
+            s1.score,
+            s2.cid,
+            s2.score
+        from score s1
+        join score s2 on s1.sid = s2.sid
+        where s1.cid <> s2.cid 
+        and s1.score = s2.score        
+    42、查询每门课程成绩最好的前三名:
+        略
+    43、统计每门课程的学生选修人数（超过5人的课程才统计）:
+        要求输出课程号和选修人数，查询结果按人数降序排列，若人数相同，按课程号升序排列
+         略
+    44、检索至少选修两门课程的学生学号:
+        参见第13题,将01号学生，改成所有的课程列表即可
+        select collect_list(tmp.cid) from (select distinct cid from score order by cid) tmp;
+    45、查询选修了全部课程的学生信息:
+        略
+    46、查询各学生的年龄(周岁):
+        按照出生日期来算，当前月日 < 出生年月的月日则，年龄减一
+        select 
+            id, 
+            name, 
+            birthday, 
+            (year(current_date()) - year(birthday)) age
+        from student;
+    47、查询本周过生日的学生:
+        -- 真实的统计结果
+        select 
+            id, 
+            name, 
+            birthday, 
+            weekofyear(birthday) week
+        from student
+        where weekofyear(birthday) = weekofyear(current_date());
+        -- 为了配合测试
+        select 
+            id, 
+            name, 
+            birthday, 
+            weekofyear(birthday) week
+        from student
+        where weekofyear(birthday) = weekofyear(date_add(current_date(), 15));        
+    48、查询下周过生日的学生:
+         select 
+            id, 
+            name, 
+            birthday, 
+            weekofyear(birthday) week,
+            weekofyear(current_date(), 7)) current_week,
+            weekofyear(date_add(date_add(current_date(), 7), 7)) next_week
+        from student
+        where weekofyear(birthday) = weekofyear(date_add(date_add(current_date(), 7), 7));     
+    49、查询本月过生日的学生:
+        select * from student where month(birthday) = month(current_date());
+    50、查询12月份过生日的学生:
+        select * from student where month(birthday) = 12;

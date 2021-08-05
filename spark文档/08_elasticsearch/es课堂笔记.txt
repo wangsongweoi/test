@@ -1,0 +1,381 @@
+<books>
+    <book>
+        <id>1</id>
+        <name>金瓶梅</name>
+        <author>某某某</author>
+        <price>39.9</price>
+    </book>
+    <book>
+        <id>2</id>
+        <name>红楼梦</name>
+        <author>曹雪芹</author>
+        <price>49.9</price>
+    </book>    
+</books>
+
+{"books":[{"book": {"id":1, "name": "金瓶梅", "author": "某某某", "price": 39.9}},{"book": {"id":2, "name": "红楼梦", "author": "曹雪芹", "price": 49.9}}]}
+
+传统的url：http://xxxx/list?id=1
+rest:http://xxx/list/1
+
+
+elasticsearch安装配置：
+    1、2.x以后，es必须只能安装在非root用户下面
+    2、解压、重命名
+    3、修改$ELASTICSEARCH_HOME/conf/elasticsearch.yml文件
+        cluster.name: bigdata-1903
+        node.name: hadoop
+        path.data: /home/bigdata/data/elastic（手动创建目录）
+        path.logs: /home/bigdata/logs/elastic（手动创建目录）
+        network.host: 0.0.0.0
+        http.port: 9200
+		node.master: true
+		node.data: true
+    启动：
+        bin/elasticsearch
+    错误：
+        1°、[hadoop] unable to install syscall filter: java.lang.UnsupportedOperationException: seccomp unavailable: CONFIG_SECCOMP not compiled into kernel, CONFIG_SECCOMP and CONFIG_SECCOMP_FILTER are needed
+            内核不匹配当前版本
+            查看当前内核：
+            [bigdata@bigdata01 ~]$ uname -a
+                Linux bigdata01 2.6.32-573.el6.x86_64 #1 SMP Thu Jul 23 15:44:03 UTC 2015 x86_64 x86_64 x86_64 GNU/Linux
+            内核版本为：2.6.32-573.el6.x86_64，过低
+            有两种解决方案：
+                1）、直接使用CentOS7.x
+                2）、升级内核kernel
+        [1]: max file descriptors [4096] for elasticsearch process is too low, increase to at least [65536]
+        [2]: max number of threads [1024] for user [bigdata] is too low, increase to at least [4096]
+        [3]: max virtual memory areas vm.max_map_count [65530] is too low, increase to at least [262144]
+        [4]: system call filters failed to install; check the logs and fix your configuration or disable system call filters at your own risk
+    错误修改：
+        1、更新内核：
+            1°、更新nss
+               [bigdata@bigdata01 elasticsearch]$ sudo yum -y update nss
+            2°、安装public-key
+               [bigdata@bigdata01 elasticsearch]$ sudo rpm --import https://www.elrepo.org/RPM-GPG-KEY-elrepo.org
+            3°、安装elrepo
+               [bigdata@bigdata01 elasticsearch]$ sudo rpm -Uvh https://www.elrepo.org/elrepo-release-6-8.el6.elrepo.noarch.rpm
+            4°、安装更新内核
+               [bigdata@bigdata01 elasticsearch]$ sudo yum --enablerepo=elrepo-kernel install kernel-lt -y
+            5°、编辑/etc/grub.conf文件，修改Grub引导顺序
+                将default有原先的1改成0
+            6°、重启
+        2、其他配置错误修正   
+            [1]: max file descriptors [4096] for elasticsearch process is too low, increase to at least [65536]
+                修改/etc/security/limits.conf 添加如下内容：
+                *	soft	nofile	65536
+                *	hard	nofile	131072
+                *	soft	nproc	2048
+                *	hard	nproc	4096
+            [2]: max number of threads [1024] for user [bigdata] is too low, increase to at least [4096]
+                进入/etc/security/limits.d/目录下修改配置文件90-nproc.conf 
+                sudo vim /etc/security/limits.d/90-nproc.conf 
+                将原先的*          soft    nproc     1024改为
+                *	soft	nproc	4096
+            [3]: max virtual memory areas vm.max_map_count [65530] is too low, increase to at least [262144]
+                修改配置文件/etc/sysctl.conf 
+                添加如下内容：vm.max_map_count = 262144
+            [4]: system call filters failed to install; check the logs and fix your configuration or disable system call filters at your own risk
+                在elasticsearch.yml中配置bootstrap.system_call_filter为false，注意要在Memory下面:
+                bootstrap.memory_lock: false
+                bootstrap.system_call_filter: false
+        说明，下午要配置分布式集群环境，所以大家在三台机器中都要做相关的配置修改        
+    4、启动验证    
+        控制台：[bigdata@bigdata01 ~]$ curl -XGET http://localhost:9200
+        浏览器：http://bigdata01:9200/
+        出现如下信息说明，安装配置成功！
+        {
+          "name" : "hadoop",
+          "cluster_name" : "bigdata-1901",
+          "cluster_uuid" : "GJRoZXzRRCmcFX16RU-IDw",
+          "version" : {
+            "number" : "6.5.2",
+            "build_flavor" : "default",
+            "build_type" : "tar",
+            "build_hash" : "9434bed",
+            "build_date" : "2018-11-29T23:58:20.891072Z",
+            "build_snapshot" : false,
+            "lucene_version" : "7.5.0",
+            "minimum_wire_compatibility_version" : "5.6.0",
+            "minimum_index_compatibility_version" : "5.0.0"
+          },
+          "tagline" : "You Know, for Search"
+        }
+elasticsearch基本操作
+    1、使用curl完成es的操作
+        -X 指定http的请求方法 有HEAD GET POST PUT DELETE
+        -d 指定要传输的数据
+        -H 指定http请求头信息
+        -----------------------
+        1°、在es中创建一个索引库index
+            curl -XPUT http://localhost:9200/product
+        2°、创建索引库下面的类型type
+            curl -XPOST http://localhost:9200/product/bigdata
+            {"error":{"root_cause":[{"type":"parse_exception","reason":"request body is required"}],"type":"parse_exception","reason":"request body is required"},"status":400}
+            说明：不要直接创建类型，类型可以动态的指定，在添加索引数据(document文档)的时候直接指定即可
+        3°、添加一条记录
+            格式：
+                curl -XPOST http://localhost:9200/{index}/{type}/{id} -d'json数据'
+            eg.
+                curl -XPOST http://localhost:9200/product/bigdata/1 -d '{"name": "hadoop", "version": "2.7.6", "author": "apache"}' 
+                有异常：
+                    {"error":"Content-Type header [application/x-www-form-urlencoded] is not supported","status":406}
+                修正：为当前操作，添加相关的Content-Type
+                curl -XPOST -H 'Content-Type: application/json' http://localhost:9200/product/bigdata/1 -d '{"name": "hadoop", "version": "2.7.6", "author": "apache"}' 
+        4°、查询一条索引信息
+            格式：
+                curl -XGET http://localhost:9200/{index}/{type}/{id}
+            eg.
+                curl -XGET http://localhost:9200/product/bigdata/1
+                {"_index":"product","_type":"bigdata","_id":"1","_version":1,"found":true,"_source":{"name": "hadoop", "version": "2.7.6", "author": "apache"}}
+            美化版的格式：
+                 curl -XGET http://localhost:9200/{index}/{type}/{id}?pretty
+            eg. 
+                curl -XGET http://localhost:9200/product/bigdata/1?pretty
+                {
+                  "_index" : "product",
+                  "_type" : "bigdata",
+                  "_id" : "1",
+                  "_version" : 1,
+                  "found" : true,
+                  "_source" : {
+                    "name" : "hadoop",
+                    "version" : "2.7.6",
+                    "author" : "apache"
+                  }
+                }
+        5°、多添加几条记录
+            curl -XPOST -H 'Content-Type: application/json' http://localhost:9200/product/bigdata/2 -d '{"name": "hive", "version": "2.1.0", "author": "facebook"}' 
+            在创建索引的时候，如果想要id(主键)自增，需要手动指定，如果不需要自增，可以不用指定,但是需要注意，此时只能使用POST操作,此时id为一个随机字符串
+            curl -XPUT -H 'Content-Type: application/json' http://localhost:9200/product/bigdata?pretty -d '{"name": "hbase", "version": "1.1.5", "author": "apache"}' 
+            {
+              "error" : "Incorrect HTTP method for uri [/product/bigdata?pretty] and method [PUT], allowed: [POST]",
+              "status" : 405
+            }
+            修改
+            curl -XPOST -H 'Content-Type: application/json' http://localhost:9200/product/bigdata?pretty -d '{"name": "hbase", "version": "1.1.5", "author": "apache"}' 
+            {
+              "_index" : "product",
+              "_type" : "bigdata",
+              "_id" : "hTZ3SGkBKThmWprGPXs2",
+              "_version" : 1,
+              "result" : "created",
+              "_shards" : {
+                "total" : 2,
+                "successful" : 1,
+                "failed" : 0
+              },
+              "_seq_no" : 0,
+              "_primary_term" : 1
+            }
+        6°、查询所有记录
+             格式：
+                curl -XGET http://localhost:9200/{index}/_search
+                curl -XGET http://localhost:9200/{index}/{type}/_search
+            eg.
+                curl -XGET http://localhost:9200/product/bigdata/_search?pretty
+                或者
+                curl -XGET http://localhost:9200/product/_search?pretty
+        7°、条件查询
+            查询author为apache
+                curl -XGET 'http://localhost:9200/product/_search?q=author:apache&pretty'
+            比如执行查询name和author信息
+                curl -XGET 'http://localhost:9200/product/_search?_source=name,author&q=author:apache&pretty'
+        8°、删除一条记录(只能基于id进行删除)
+            格式：
+                curl -XDELETE http://localhost:9200/{index}/{type}/{id}
+            eg.
+                curl -XDELETE http://localhost:9200/product/bigdata/hTZ3SGkBKThmWprGPXs2?pretty
+                {
+                  "_index" : "product",
+                  "_type" : "bigdata",
+                  "_id" : "hTZ3SGkBKThmWprGPXs2",
+                  "_version" : 2,
+                  "result" : "deleted",
+                  "_shards" : {
+                    "total" : 2,
+                    "successful" : 1,
+                    "failed" : 0
+                  },
+                  "_seq_no" : 1,
+                  "_primary_term" : 1
+                }
+                   注意：一个文档被删除之后，不会立即生效，他只是被标记为已删除。ES将会在你之后添加更多索引的时候才会在后台进行删除。
+        9°、批量操作---->_bulk
+            数据格式：
+                Bulk api可以帮助我们同时执行多个请求
+                action:[index|create|update|delete]
+                metadata:_index,_type,_id
+                request body:_source(删除操作不需要)
+                {action:{metadata}}\n
+                {request body}\n
+                {action:{metadata}}\n
+                {request body}\n
+            说明：
+                create和index的区别
+                如果数据存在，使用create操作失败，会提示文档已经存在，使用index则可以成功执行。
+            使用文件的方式
+                curl -XPOST/PUT -H "Content-Type: application/json" http://localhost:9200/{index}/{type}/_bulk --data-binary @path
+                path就是数据文件的路径（可以是相对路径）
+            eg.
+                创建一个索引库来保存批量信息，index=account,type=bank
+                curl -XPUT -H "Content-Type: application/json" http://localhost:9200/account?pretty
+                执行批量操作
+                curl -XPUT -H "Content-Type: application/json" http://localhost:9200/account/bank/_bulk?pretty --data-binary @/home/bigdata/accounts.json
+        10°、大结果集的分页查询
+            格式：
+                http://bigdata01:9200/account/bank/_search?pretty&from={num}&size={size}
+                其中from代表的是从哪一条开始，最开始的索引是0，size代表查询多少条记录
+            默认es，每页显示10条记录，所以默认的操作其实就是如下：
+                http://bigdata01:9200/account/bank/_search?pretty&from=0&size=10
+            分页算法：
+                我们想查询第N页的数据，每页使用默认10记录
+                起始索引就是(N-1) * 10
+                http://bigdata01:9200/account/bank/_search?pretty&from=20&size=10
+        11°、局部更新
+            格式：
+                curl -XPOST -H "Content-Type: application/json" http://bigdata01:9200/{index}/{type}/{id}/_update -d'{"doc":{xxx}}
+            eg.
+                curl -XPOST -H "Content-Type: application/json" http://localhost:9200/product/bigdata/1/_update?pretty -d'{"doc": {"name":"hadoop", "version":"2.7.6"}}'
+POST和PUT的区别
+    PUT是幂等方法，POST不是。所以PUT用户更新，POST用于新增比较合适。
+    PUT和DELETE操作是幂等的。所谓幂等是指不管进行多少次操作，结果都一样。比如用PUT修改一篇文章，然后在做同样的操作，每次操作后的结果并没有什么不同，DELETE也是一样。
+    POST操作不是幂等的，比如常见的POST重复加载问题：当我们多次发出同样的POST请求后，其结果是创建了若干的资源。
+    还有一点需要注意的就是，创建操作可以使用POST，也可以使用PUT，区别就在于POST是作用在一个集合资源(/articles)之上的，而PUT操作是作用在一个具体资源之上的(/articles/123)，比如说很多资源使用数据库自增主键作为标识信息，这个时候就需要使用PUT了。而创建的资源的标识信息到底是什么，只能由服务端提供时，这个时候就必须使用POST。
+    ES创建索引库和索引时的注意点
+        1)索引库名称必须要全部小写，不能以下划线开头，也不能包含逗号
+        2)如果没有明确指定索引数据的ID，那么es会自动生成一个随机的ID，需要使用POST参数                
+-------------------------------------------------------------------------------------------------
+几个插件
+    elasticsearch-head
+        在线chrome应用市场安装
+            https://chrome.google.com/webstore/search/elasticsearch
+        离线安装方式
+            从github下载安装包：https://github.com/TravisTX/elasticsearch-head-chrome
+    kibana(非Java程序)
+        解压、重命名
+        配置：
+            server.host: "0.0.0.0"
+            server.port: 5601
+            server.name: "kibana-bd-1901"
+            elasticsearch.url: "http://bigdata01:9200"
+        启动：nohup bin/kibana serve >/dev/null 2>&1 &  
+        访问：在浏览器中输入：
+            http://bigdata01:5601
+-------------------------------------------------------------------------------------------------
+集群健康值---集群健康状态程度(索引可使用程度)：*****
+    GREEN   ：最健康的状态，所有的主分片和所有的副分片都可用
+    Yellow  ：次之，所有的主分片都可用，不是所有的副分片都可用
+    RED     ：最差，不是所有的主分片和副分片都可用
+-------------------------------------------------------------------------------------------------
+分布式集群安装：
+    node.name:  做相关更改意外，添加如下配置
+    node.master: true
+    node.data: true
+    discovery.zen.ping.unicast.hosts: ["bigdata01", "bigdata02", "bigdata03"]
+                
+    通过http://bigdata01:9200/_cluster/health?pretty来查看集群的健康状况            
+{
+  "cluster_name" : "bigdata-1901",
+  "status" : "green",
+  "timed_out" : false,
+  "number_of_nodes" : 3,
+  "number_of_data_nodes" : 3,
+  "active_primary_shards" : 10,
+  "active_shards" : 20,
+  "relocating_shards" : 0,
+  "initializing_shards" : 0,
+  "unassigned_shards" : 0,
+  "delayed_unassigned_shards" : 0,
+  "number_of_pending_tasks" : 0,
+  "number_of_in_flight_fetch" : 0,
+  "task_max_waiting_in_queue_millis" : 0,
+  "active_shards_percent_as_number" : 100.0
+}                
+-------------------------------------------------------------------------------------------------
+核心概念
+    shards：当做kafka中某一个topic对应的partition，hdfs中一个文件对应的block块，所以一个索引库就有若干个shards，
+        认es集群为每一个索引指定5个分片，也可以手动指定分片个数
+        则需要在创建的时候指定分片的个数，而且，创建之后分片的个数便不能被修改。
+            number_of_shards
+        eg. curl -XPUT -H "Content-Type: application/json" http://bigdata01:9200/test-shards -d'{"settings":{"number_of_shards": 3}}'
+    replicas:当前索引库的副本因子，就相当于kafka中的副本因子，相当于hdfs中的replication备份数，在es中默认是1.
+        该副本数，既可以在创建的时候指定，也可以在创建之后进行修改
+            number_of_replicas
+        eg. curl -XPUT -H "Content-Type: application/json" http://bigdata01:9200/test-replicas -d'{"settings":{"number_of_replicas": 3}}'       
+        修改索引的副本因子
+            curl -XPUT -H "Content-Type: application/json" 'http://bigdata01:9200/test-replicas/_settings' -d'{"index":{"number_of_replicas":2}}'
+    recovery
+       代表数据恢复或者叫数据重新分布，ES在有节点加入或退出时会根据机器的负载对索引分片进行重新分配，挂掉的节点重新启动时也会进行数据恢复。
+    gateway
+       代表ES索引的持久化存储方式，ES默认是先把索引存放到内存中，当内存满了时再持久化到硬盘。当这个ES集群关闭在重新启动是就会从gateway中读取索引数据。Es支持多种类型的gateway，有本地文件系统(默认)，分布式文件系统，Hadoop的HDFS和amazon的s3云存储服务。
+    discovery.zen
+       代表ES的自动发现节点机制，ES是一个基于p2p的系统，它先通过广播寻找存在的节点，再通过多播协议来进行节点之间的通信，同时也支持点对点的交互。
+    **如果是不同网段的节点如果组成ES集群
+       禁用自动发现机制   discovery.zen.ping.multicast.enabled: false
+    设置新节点被启动时能够发现的注解列表
+    discovery.zen.ping.unicast.hosts: ["master:9200", "slave01:9200"]
+    Transport
+      代表ES内部节点或集群与客户端的交互方式，默认内部是使用tcp协议进行交互，同时它支持http协议(json格式)、thrift、servlet、memcached、zeroMQ等传输协议(通过插件方式集成)。
+-------------------------------------------------------------------------------------------------
+Java API操作
+    添加依赖：
+        <dependency>
+            <groupId>org.elasticsearch.client</groupId>
+            <artifactId>transport</artifactId>
+            <version>6.5.2</version>
+        </dependency>
+    创建Transport
+        private TransportClient client;
+        @Before
+        public void setUp() throws UnknownHostException {
+            client = new PreBuiltTransportClient(Settings.EMPTY);//创建es的客户端,就相当于jdbc中的Connection
+            //给client指定es集群的地址
+            TransportAddress ta1 = new TransportAddress(InetAddress.getByName("bigdata01"), 9300);
+            TransportAddress ta2 = new TransportAddress(InetAddress.getByName("bigdata02"), 9300);
+            TransportAddress ta3 = new TransportAddress(InetAddress.getByName("bigdata03"), 9300);
+            client.addTransportAddresses(ta1, ta2, ta3);
+
+        }
+            创建Transport的时候，出现异常NoNodeAvailableException[None of the configured nodes are available: [{#transport#-1}{vEiGrwdqRsqpux71_-ffpA}{bigdata01}{192.168.43.111:9300}]           
+            主要原因就在于，Settings对象中配置的cluster.name和真实集群不一致操作，默认的es集群的cluster.name为elasticsearch，而我们将其改为bd-1901。
+            所以在创建TransportClient的时候，必须指定集群的名称。
+        修正之后的代码：
+            @Before
+            public void setUp() throws UnknownHostException {
+                client = new PreBuiltTransportClient(Settings.builder()//
+                         .put("cluster.name", "bigdata-1901")//
+                         .build());//创建es的客户端,就相当于jdbc中的Connection
+                //给client指定es集群的地址
+                TransportAddress ta1 = new TransportAddress(InetAddress.getByName("bigdata01"), 9300);
+                TransportAddress ta2 = new TransportAddress(InetAddress.getByName("bigdata02"), 9300);
+                TransportAddress ta3 = new TransportAddress(InetAddress.getByName("bigdata03"), 9300);
+                client.addTransportAddresses(ta1, ta2, ta3);        
+            }  
+                
+问题：
+{"error":{"root_cause":[{"type":"illegal_argument_exception","reason":"Rejecting mapping update to [test] as the final mapping would have more than 1 type: [t1, t2]"}],"type":"illegal_argument_exception","reason":"Rejecting mapping update to [test] as the final mapping would have more than 1 type: [t1, t2]"},"status":400}               
+                
+6.0的版本不允许一个index下面有多个type，并且官方说是在接下来的7.0版本中会删掉type                
+-----------------------------------------------------------------------------------------
+elasticsearch的rest的操作方式
+	restful操作其实是达到和之前的cli的操作方式
+                
+curl -XPOST -H"Content-Type: application/json" 'http://bigdata01:9200/account/bank/_search?pretty' -d '{
+  "query": {
+        "bool": {
+            "must_not": [
+                {"match": {"address":"mill"}},
+                {"match": {"address":"lane"}}
+            ]
+        }
+  },
+ "from": 0,
+ "size": 5,
+ "sort": {
+	 "age": "desc",
+	 "balance": "asc"
+ }	
+}'           
+                
+                
